@@ -1,89 +1,95 @@
+# from flask import Flask
 from flask import Flask, render_template, request,jsonify
 from flask_cors import CORS,cross_origin
 import requests
-from bs4 import BeautifulSoup as bs
+import time
+# from bs4 import BeautifulSoup as bs
 from urllib.request import urlopen as uReq
 import pymongo
-
-application = Flask(__name__) # initializing a flask app
-app=application
-
-@app.route('/',methods=['GET'])  # route to display the home page
+from selenium import webdriver
+from selenium.webdriver.chrome.options import Options
+from bs4 import BeautifulSoup
+app = Flask(__name__)
+@app.route('/',methods=['GET'])
 @cross_origin() # its purpose is to be available to different countries
-def homePage():
-    return render_template("index.html")
-
-@app.route('/review',methods=['POST','GET']) # route to show the review comments in a web UI
-@cross_origin()
 def index():
+    return render_template("index.html")
+@app.route('/results',methods=['POST','GET'])
+@cross_origin() # its purpose is to be available to different countries
+def result():
     if request.method == 'POST':
         try:
-            searchString = request.form['content'].replace(" ","")
-            flipkart_url = "https://www.flipkart.com/search?q=" + searchString
-            uClient = uReq(flipkart_url)
-            flipkartPage = uClient.read()
-            uClient.close()
-            flipkart_html = bs(flipkartPage, "html.parser")
-            bigboxes = flipkart_html.findAll("div", {"class": "_1AtVbE col-12-12"})
-            del bigboxes[0:3]
-            box = bigboxes[0]
-            productLink = "https://www.flipkart.com" + box.div.div.div.a['href']
-            prodRes = requests.get(productLink)
-            prodRes.encoding='utf-8'
-            prod_html = bs(prodRes.text, "html.parser")
-            print(prod_html)
-            commentboxes = prod_html.find_all('div', {'class': "_16PBlm"})
+            searchString = request.form['content']
+            print(searchString)
+            options = Options()
+            options.add_argument("--headless")
+            driver = webdriver.Chrome(options=options)
+            yt = searchString
+            driver.get(yt)
+            driver.execute_script("window.scrollTo(0, document.body.scrollHeight);")
+            # time.sleep(5)  # Add a sleep time to wait for more videos to load
 
-            filename = searchString + ".csv"
-            fw = open(filename, "w")
-            headers = "Product, Customer Name, Rating, Heading, Comment \n"
-            fw.write(headers)
-            reviews = []
-            for commentbox in commentboxes:
+            page_source = driver.page_source
+            soup = BeautifulSoup(page_source, 'html.parser')
+
+            # box = soup.findAll('div', {'class': 'ytd-rich-grid-media'})
+            box = soup.findAll('div',id = 'contents')
+
+
+            # Print the number of videos found
+            print(f"Found {len(box)} videos")
+
+            driver.quit()
+            urls = []
+            thumbnails = []
+            for i in range(len(box)):
                 try:
-                    #name.encode(encoding='utf-8')
-                    name = commentbox.div.div.find_all('p', {'class': '_2sc7ZR _2V5EHH'})[0].text
-
-                except:
-                    name = 'No Name'
-
-                try:
-                    #rating.encode(encoding='utf-8')
-                    rating = commentbox.div.div.div.div.text
-
-
-                except:
-                    rating = 'No Rating'
-
-                try:
-                    #commentHead.encode(encoding='utf-8')
-                    commentHead = commentbox.div.div.div.p.text
-
-                except:
-                    commentHead = 'No Comment Heading'
-                try:
-                    comtag = commentbox.div.div.find_all('div', {'class': ''})
-                    #custComment.encode(encoding='utf-8')
-                    custComment = comtag[0].div.text
+                    if("https://www.youtube.com"+box[i].a["href"] not in urls):
+                        p =box[i].a["href"]
+                        q = p[9:]
+                        thumbnails.append("http://img.youtube.com/vi/"+q+"/hqdefault.jpg")
+                        urls.append("https://www.youtube.com"+box[i].a["href"])
                 except Exception as e:
-                    print("Exception while creating dictionary: ",e)
-
-                mydict = {"Product": searchString, "Name": name, "Rating": rating, "CommentHead": commentHead,
-                          "Comment": custComment}
-                reviews.append(mydict)
-            client = pymongo.MongoClient("mongodb+srv://pwskills:pwskills@cluster0.ln0bt5m.mongodb.net/?retryWrites=true&w=majority")
-            db = client['review_scrap']
-            review_col = db['review_scrap_data']
-            review_col.insert_many(reviews)
-            return render_template('results.html', reviews=reviews[0:(len(reviews)-1)])
-        except Exception as e:
-            print('The Exception message is: ',e)
-            return 'something is wrong'
-    # return render_template('results.html')
-
-    else:
-        return render_template('index.html')
-
-if __name__ == "__main__":
-    app.run(host='127.0.0.1', port=8000, debug=True)
-	#app.run(debug=True)
+                    pass
+            vid_titles =[]
+            for i in range(len(box)):
+                try:
+                    if(box[i].findAll('a',id="video-title-link")[0].text not in vid_titles):
+                        vid_titles.append(box[i].findAll('a',id="video-title-link")[0].text)
+                except Exception as e:
+                    pass
+            views=[]
+            for i in range(0,len(box)):
+                try:
+                    if(box[i].findAll('span',{'class':'inline-metadata-item style-scope ytd-video-meta-block'})[0].text not in views):
+                        views.append(box[i].findAll('span',{'class':'inline-metadata-item style-scope ytd-video-meta-block'})[0].text)
+                except Exception as e:
+                    pass
+            time = []
+            for i in range(0,len(box),3):
+                try:
+                    # if(box[i].findAll('span',{'class':'inline-metadata-item style-scope ytd-video-meta-block'})[1].text not in time):
+                    time.append(box[i].findAll('span',{'class':'inline-metadata-item style-scope ytd-video-meta-block'})[1].text)
+                except Exception as e:
+                    pass
+            url5 = urls[0:6]
+            thumb5 = thumbnails[0:6]
+            title5 = vid_titles[0:6]
+            view5 = views[0:6]
+            time5 = time[0:6]
+            final = []
+            for i in range(6):
+                mydict = {"Video Urls": url5[i], "Thumbnail Urls": thumb5[i], "Title": title5[i], "Views": view5[i],
+                          "Upload time": time5[i]}
+                final.append(mydict)
+            # client = pymongo.MongoClient("mongodb+srv://breakratr:breakratr@cluster0.ln0bt5m.mongodb.net/?retryWrites=true&w=majority")
+            # db = client['review_scrap']
+            # review_col = db['review_scrap_data']
+            # review_col.insert_many(mydict)
+            return render_template('results.html', videos=final[0:len(final)])
+                
+                
+        except  Exception as e:
+            return e
+if __name__ == '__main__':
+    app.run(debug=True)
